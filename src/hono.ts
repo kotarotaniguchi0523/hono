@@ -14,7 +14,7 @@ import type { BlankEnv, BlankSchema, Env, Schema } from './types'
  * @template BasePath - The base path type.
  */
 export class Hono<
-  E extends Env = BlankEnv,
+  in out E extends Env = BlankEnv,
   S extends Schema = BlankSchema,
   BasePath extends string = '/',
 > extends HonoBase<E, S, BasePath> {

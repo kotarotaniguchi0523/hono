@@ -48,6 +48,35 @@ describe('Env', () => {
   })
 })
 
+describe('ExtractSchema', () => {
+  it('should intersect schemas only when the app type is a union', () => {
+    const left = new Hono().get('/left', (c) => c.text('left'))
+    const right = new Hono().get('/right', (c) => c.text('right'))
+
+    type Actual = ExtractSchema<typeof left | typeof right>
+    type Expected = {
+      '/left': {
+        $get: {
+          input: {}
+          output: 'left'
+          outputFormat: 'text'
+          status: ContentfulStatusCode
+        }
+      }
+    } & {
+      '/right': {
+        $get: {
+          input: {}
+          output: 'right'
+          outputFormat: 'text'
+          status: ContentfulStatusCode
+        }
+      }
+    }
+    type verify = Expect<Equal<Expected, Actual>>
+  })
+})
+
 describe('HandlerInterface', () => {
   type Env = {}
 

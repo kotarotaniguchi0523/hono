@@ -126,9 +126,9 @@ type ClientResponseOfEndpoint<T extends Endpoint = Endpoint> = T extends {
   : never
 
 export interface ClientResponse<
-  T,
-  U extends number = StatusCode,
-  F extends ResponseFormat = ResponseFormat,
+  out T,
+  out U extends number = StatusCode,
+  out F extends ResponseFormat = ResponseFormat,
 > {
   readonly body: ReadableStream | null
   readonly bodyUsed: boolean
@@ -308,14 +308,74 @@ type PathToChain<
         >
       }
 
-export type Client<T, Prefix extends string> =
-  T extends HonoBase<any, infer S, any>
-    ? S extends Record<infer K, Schema>
-      ? K extends string
-        ? PathToChain<Prefix, K, S>
-        : never
-      : never
+type StripLeadingSlash<Path extends string> = Path extends `/${infer Rest}`
+  ? StripLeadingSlash<Rest>
+  : Path
+
+type NormalizeClientPaths<Paths> = Paths extends string ? StripLeadingSlash<Paths> : never
+
+type ClientPathHead<Path extends string> = Path extends `${infer Head}/${string}` ? Head : Path
+
+type ClientPathTail<
+  Paths extends string,
+  Segment extends string,
+> = Paths extends `${Segment}/${infer Rest}` ? Rest : never
+
+type ClientPathExact<Paths extends string, Segment extends string> = Paths extends Segment
+  ? Paths
+  : never
+
+type ClientSchemaPath<S extends Schema, Candidate extends string> = Candidate extends keyof S
+  ? Candidate
+  : StripLeadingSlash<Candidate> extends keyof S
+    ? StripLeadingSlash<Candidate>
     : never
+
+type ClientEndpoint<Prefix extends string, S extends Schema, Path extends string> =
+  ClientSchemaPath<S, Path> extends infer K extends keyof S & string
+    ? ClientRequest<Prefix, K, S[K]>
+    : never
+
+type JoinClientPath<Prefix extends string, Segment extends string> = Prefix extends ''
+  ? `/${Segment}`
+  : `${Prefix}/${Segment}`
+
+type ClientTreeNode<
+  Prefix extends string,
+  S extends Schema,
+  Paths extends string,
+  Segment extends string,
+  PathPrefix extends string,
+> = (ClientPathExact<Paths, Segment> extends never
+  ? unknown
+  : ClientEndpoint<Prefix, S, JoinClientPath<PathPrefix, Segment>>) &
+  (ClientPathTail<Paths, Segment> extends never
+    ? unknown
+    : ClientTree<Prefix, S, ClientPathTail<Paths, Segment>, JoinClientPath<PathPrefix, Segment>>)
+
+type ClientTree<
+  Prefix extends string,
+  S extends Schema,
+  Paths extends string,
+  PathPrefix extends string = '',
+> = {
+  [Segment in ClientPathHead<Paths> as Segment extends '' ? 'index' : Segment]: ClientTreeNode<
+    Prefix,
+    S,
+    Paths,
+    Segment,
+    PathPrefix
+  >
+}
+
+type ClientFromSchema<Prefix extends string, S extends Schema> = S extends unknown
+  ? string extends keyof S
+    ? PathToChain<Prefix, string, S>
+    : ClientTree<Prefix, S, NormalizeClientPaths<keyof S & string>>
+  : never
+
+export type Client<T, Prefix extends string> =
+  T extends HonoBase<any, infer S, any> ? ClientFromSchema<Prefix, S> : never
 
 export type Callback = (opts: CallbackOptions) => unknown
 

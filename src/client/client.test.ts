@@ -2016,3 +2016,26 @@ describe('PickResponseByStatusCode Type Helper', () => {
     type verify = Expect<Equal<ResponseType, Expected>>
   })
 })
+
+describe('QUERY', () => {
+  it('should send a JSON body with the QUERY method', async () => {
+    const app = new Hono().query(
+      '/search',
+      validator('json', (value) => value as { query: string }),
+      (c) =>
+        c.json({
+          body: c.req.valid('json'),
+          contentType: c.req.header('content-type'),
+        })
+    )
+    const client = hc<typeof app>('', { fetch: app.request })
+
+    const res = await client.search.$query({ json: { query: 'hono' } })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      body: { query: 'hono' },
+      contentType: 'application/json',
+    })
+  })
+})

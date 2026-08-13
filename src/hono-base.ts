@@ -41,9 +41,9 @@ const errorHandler: ErrorHandler = (err, c) => {
   return c.text('Internal Server Error', 500)
 }
 
-type GetPath<E extends Env> = (request: Request, options?: { env?: E['Bindings'] }) => string
+type GetPath<in E extends Env> = (request: Request, options?: { env?: E['Bindings'] }) => string
 
-export type HonoOptions<E extends Env> = {
+export type HonoOptions<in E extends Env> = {
   /**
    * `strict` option specifies whether to distinguish whether the last path is a directory or not.
    *
@@ -96,7 +96,7 @@ type MountOptions =
     }
 
 class Hono<
-  E extends Env = Env,
+  in out E extends Env = Env,
   S extends Schema = {},
   BasePath extends string = '/',
   CurrentPath extends string = BasePath,

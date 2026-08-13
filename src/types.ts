@@ -74,17 +74,17 @@ export type HandlerResponse<O> =
   | Promise<void>
 
 export type Handler<
-  E extends Env = any,
+  in out E extends Env = any,
   P extends string = any,
   I extends Input = BlankInput,
-  R extends HandlerResponse<any> = any,
+  out R extends HandlerResponse<any> = any,
 > = (c: Context<E, P, I>, next: Next) => R
 
 export type MiddlewareHandler<
-  E extends Env = any,
+  in out E extends Env = any,
   P extends string = string,
   I extends Input = {},
-  R extends HandlerResponse<any> = Response,
+  out R extends HandlerResponse<any> = Response,
 > = (c: Context<E, P, I>, next: Next) => Promise<R | void>
 
 export type H<
@@ -1078,7 +1078,7 @@ export interface HandlerInterface<
 ////////////////////////////////////////
 
 export interface MiddlewareHandlerInterface<
-  E extends Env = Env,
+  in out E extends Env = Env,
   S extends Schema = BlankSchema,
   BasePath extends string = '/',
 > {
@@ -1455,7 +1455,7 @@ export interface MiddlewareHandlerInterface<
 ////////////////////////////////////////
 
 export interface OnHandlerInterface<
-  E extends Env = Env,
+  in out E extends Env = Env,
   S extends Schema = BlankSchema,
   BasePath extends string = '/',
 > {
@@ -2633,9 +2633,9 @@ export type KnownResponseFormat = 'json' | 'text' | 'redirect'
 export type ResponseFormat = KnownResponseFormat | string
 
 export type TypedResponse<
-  T = unknown,
-  U extends StatusCode = StatusCode,
-  F extends ResponseFormat = T extends string
+  out T = unknown,
+  out U extends StatusCode = StatusCode,
+  out F extends ResponseFormat = T extends string
     ? 'text'
     : T extends JSONValue
       ? 'json'
@@ -2734,9 +2734,17 @@ export type RemoveQuestion<T> = T extends `${infer R}?` ? R : T
 //////                            //////
 ////////////////////////////////////////
 
-export type ExtractSchema<T> = UnionToIntersection<
-  T extends HonoBase<infer _, infer S, any, any> ? S : never
->
+type IsUnion<T, U = T> = T extends any ? ([U] extends [T] ? false : true) : never
+
+type ExtractSchemaMember<T> = T extends HonoBase<any, infer S extends Schema, any, any> ? S : never
+
+type ExtractSchemaResult<S> = [S] extends [never]
+  ? never
+  : IsUnion<S> extends true
+    ? UnionToIntersection<S>
+    : S
+
+export type ExtractSchema<T> = ExtractSchemaResult<ExtractSchemaMember<T>>
 
 export type ExtractSchemaForStatusCode<T, Status extends number> = {
   [Path in keyof ExtractSchema<T>]: {
