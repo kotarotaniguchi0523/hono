@@ -1,7 +1,11 @@
 import { writeFile } from 'node:fs'
 import * as path from 'node:path'
 
-const count = 200
+const count = Number(process.env.BENCHMARK_ROUTE_COUNT ?? '200')
+
+if (!Number.isSafeInteger(count) || count < 1) {
+  throw new Error('BENCHMARK_ROUTE_COUNT must be a positive integer')
+}
 
 const generateRoutes = (count: number) => {
   let routes = `import { Hono } from '../../../src'
