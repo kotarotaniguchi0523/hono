@@ -125,8 +125,8 @@ export type ErrorHandler<E extends Env = any> = (
 ////////////////////////////////////////
 
 export interface HandlerInterface<
-  E extends Env = Env,
-  M extends string = string,
+  in out E extends Env = Env,
+  out M extends string = string,
   S extends Schema = BlankSchema,
   BasePath extends string = '/',
   CurrentPath extends string = BasePath,
