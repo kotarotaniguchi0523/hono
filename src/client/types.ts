@@ -10,7 +10,7 @@ import type {
   Schema,
 } from '../types'
 import type { StatusCode, SuccessStatusCode } from '../utils/http-status'
-import type { HasRequiredKeys } from '../utils/types'
+import type { HasRequiredKeys, UnionToIntersection } from '../utils/types'
 
 /**
  * Type representing the '$all' method name
@@ -315,6 +315,44 @@ type PathToChain<
         >
       }
 
+type FlatPathToChain<
+  Prefix extends string,
+  Path extends string,
+  S extends Schema,
+  Original extends string = Path,
+> = Path extends `${infer P}/${infer R}`
+  ? { [K in P]: FlatPathToChain<Prefix, R, S, Original> }
+  : {
+      [K in Path extends '' ? 'index' : Path]: ClientRequest<
+        Prefix,
+        Original,
+        ClientSchemaPathValue<S, `/${Original}`>
+      >
+    }
+
+type FlatClientFromSchema<Prefix extends string, S extends Schema> = UnionToIntersection<
+  NormalizeClientPaths<keyof S & string> extends infer Paths extends string
+    ? Paths extends string
+      ? FlatPathToChain<Prefix, Paths, S>
+      : never
+    : never
+>
+
+type ClientPathExceedsDepth<
+  Path extends string,
+  Depth extends unknown[] = [],
+> = Depth['length'] extends 20
+  ? true
+  : Path extends `${string}/${infer Rest}`
+    ? ClientPathExceedsDepth<Rest, [...Depth, unknown]>
+    : false
+
+type HasDeepClientPath<Paths extends string> = true extends (
+  Paths extends unknown ? ClientPathExceedsDepth<Paths> : never
+)
+  ? true
+  : false
+
 type StripLeadingSlash<Path extends string> = Path extends `/${infer Rest}`
   ? StripLeadingSlash<Rest>
   : Path
@@ -332,16 +370,21 @@ type ClientPathExact<Paths extends string, Segment extends string> = Paths exten
   ? Paths
   : never
 
-type ClientSchemaPath<S extends Schema, Candidate extends string> = Candidate extends keyof S
-  ? Candidate
-  : StripLeadingSlash<Candidate> extends keyof S
-    ? StripLeadingSlash<Candidate>
+type ClientSchemaPathValue<S extends Schema, Candidate extends string> =
+  UnionToIntersection<
+    | (Candidate extends keyof S ? S[Candidate] : never)
+    | (StripLeadingSlash<Candidate> extends keyof S ? S[StripLeadingSlash<Candidate>] : never)
+  > extends infer R
+    ? R extends Schema
+      ? R
+      : never
     : never
 
-type ClientEndpoint<Prefix extends string, S extends Schema, Path extends string> =
-  ClientSchemaPath<S, Path> extends infer K extends keyof S & string
-    ? ClientRequest<Prefix, K, S[K]>
-    : never
+type ClientEndpoint<Prefix extends string, S extends Schema, Path extends string> = ClientRequest<
+  Prefix,
+  Path,
+  ClientSchemaPathValue<S, Path>
+>
 
 type JoinClientPath<Prefix extends string, Segment extends string> = Prefix extends ''
   ? `/${Segment}`
@@ -378,7 +421,9 @@ type ClientTree<
 type ClientFromSchema<Prefix extends string, S extends Schema> = S extends unknown
   ? string extends keyof S
     ? PathToChain<Prefix, string, S>
-    : ClientTree<Prefix, S, NormalizeClientPaths<keyof S & string>>
+    : HasDeepClientPath<NormalizeClientPaths<keyof S & string>> extends true
+      ? FlatClientFromSchema<Prefix, S>
+      : ClientTree<Prefix, S, NormalizeClientPaths<keyof S & string>>
   : never
 
 export type Client<T, Prefix extends string> =

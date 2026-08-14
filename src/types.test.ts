@@ -11,6 +11,7 @@ import type {
   Env,
   ExtractSchema,
   Handler,
+  HandlerInterface,
   InputToDataByTarget,
   MergePath,
   MergeSchemaPath,
@@ -77,8 +78,64 @@ describe('ExtractSchema', () => {
   })
 })
 
+describe('deep route composition', () => {
+  it('materializes a deeply nested route without exceeding the type depth limit', () => {
+    const level0 = new Hono().get('/leaf', (c) => c.text('leaf'))
+    const level1 = new Hono().route('/level1', level0)
+    const level2 = new Hono().route('/level2', level1)
+    const level3 = new Hono().route('/level3', level2)
+    const level4 = new Hono().route('/level4', level3)
+    const level5 = new Hono().route('/level5', level4)
+    const level6 = new Hono().route('/level6', level5)
+    const level7 = new Hono().route('/level7', level6)
+    const level8 = new Hono().route('/level8', level7)
+    const level9 = new Hono().route('/level9', level8)
+    const level10 = new Hono().route('/level10', level9)
+    const level11 = new Hono().route('/level11', level10)
+    const level12 = new Hono().route('/level12', level11)
+    const level13 = new Hono().route('/level13', level12)
+    const level14 = new Hono().route('/level14', level13)
+    const level15 = new Hono().route('/level15', level14)
+    const level16 = new Hono().route('/level16', level15)
+    const level17 = new Hono().route('/level17', level16)
+    const level18 = new Hono().route('/level18', level17)
+    const level19 = new Hono().route('/level19', level18)
+    const level20 = new Hono().route('/level20', level19)
+    const level21 = new Hono().route('/level21', level20)
+    const level22 = new Hono().route('/level22', level21)
+    const level23 = new Hono().route('/level23', level22)
+    const level24 = new Hono().route('/level24', level23)
+    const level25 = new Hono().route('/level25', level24)
+    const level26 = new Hono().route('/level26', level25)
+    const level27 = new Hono().route('/level27', level26)
+    const level28 = new Hono().route('/level28', level27)
+    const level29 = new Hono().route('/level29', level28)
+    const level30 = new Hono().route('/level30', level29)
+    const app = new Hono().route('/api', level30)
+    type Actual = keyof ExtractSchema<typeof app>
+    type Expected =
+      '/api/level30/level29/level28/level27/level26/level25/level24/level23/level22/level21/level20/level19/level18/level17/level16/level15/level14/level13/level12/level11/level10/level9/level8/level7/level6/level5/level4/level3/level2/level1/leaf'
+    type verify = Expect<Equal<Expected, Actual>>
+  })
+})
+
 describe('HandlerInterface', () => {
   type Env = {}
+
+  it('keeps method-set variance aligned with the generated RPC schema', () => {
+    const getOnly = null as unknown as HandlerInterface<Env, 'get'>
+    const getAndPost = null as unknown as HandlerInterface<Env, 'get' | 'post'>
+
+    const acceptsGetOnly: HandlerInterface<Env, 'get'> = getAndPost
+    expectTypeOf(acceptsGetOnly).toEqualTypeOf<HandlerInterface<Env, 'get'>>()
+
+    // A GET-only handler cannot be widened to a handler that advertises a POST
+    // schema: doing so would make the returned type promise an endpoint that
+    // the runtime value does not implement.
+    // @ts-expect-error Method sets are not safely covariant.
+    const acceptsGetAndPost: HandlerInterface<Env, 'get' | 'post'> = getOnly
+    void acceptsGetAndPost
+  })
 
   type Payload = { foo: string; bar: boolean }
 

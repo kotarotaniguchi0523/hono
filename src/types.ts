@@ -126,7 +126,7 @@ export type ErrorHandler<E extends Env = any> = (
 
 export interface HandlerInterface<
   in out E extends Env = Env,
-  out M extends string = string,
+  in M extends string = string,
   S extends Schema = BlankSchema,
   BasePath extends string = '/',
   CurrentPath extends string = BasePath,
@@ -2568,12 +2568,15 @@ export type MergeSchemaPath<OrigSchema extends Schema, SubPath extends string> =
     : never
 }
 
-// `route()` stores composition metadata under a non-route key. The marker is
+// `route()` stores composition metadata under a symbol key. The marker is
 // removed by MaterializeSchema before the schema is exposed to RPC consumers.
-type LazySchemaPathKey = '__hono_lazy_schema_path__'
+// A well-known symbol is used so a real route named
+// `__hono_lazy_schema_path__` remains a normal schema entry. It exists only in
+// the type layer and does not add a runtime property.
+type LazySchemaPathKey = typeof Symbol.iterator
 
 type LazySchemaPathMarker<Entry> = {
-  readonly __hono_lazy_schema_path__: Entry
+  readonly [Symbol.iterator]: Entry
 }
 
 type LazySchemaPathEntry<SubSchema extends Schema, SubPath extends string, Previous> = {
@@ -2584,29 +2587,95 @@ type LazySchemaPathEntry<SubSchema extends Schema, SubPath extends string, Previ
 
 type LazySchemaPathOf<T> = T extends LazySchemaPathMarker<infer Entry> ? Entry : never
 
+type PrefixLazySchemaPathEntries<T, Prefix extends string, Previous> = [T] extends [never]
+  ? Previous
+  : T extends LazySchemaPathEntry<
+        infer SubSchema extends Schema,
+        infer SubPath extends string,
+        infer EntryPrevious
+      >
+    ? LazySchemaPathEntry<
+        SubSchema,
+        MergePath<Prefix, SubPath>,
+        PrefixLazySchemaPathEntries<EntryPrevious, Prefix, Previous>
+      >
+    : Previous
+
+type AddLazySchemaPathEntries<SubSchema extends Schema, SubPath extends string, Previous> =
+  SubSchema extends LazySchemaPathMarker<infer Entry>
+    ? Omit<SubSchema, LazySchemaPathKey> extends infer DirectSchema extends Schema
+      ? keyof DirectSchema extends never
+        ? PrefixLazySchemaPathEntries<Entry, SubPath, Previous>
+        : LazySchemaPathEntry<
+            DirectSchema,
+            SubPath,
+            PrefixLazySchemaPathEntries<Entry, SubPath, Previous>
+          >
+      : never
+    : LazySchemaPathEntry<SubSchema, SubPath, Previous>
+
 export type AddLazySchemaPath<
   OrigSchema extends Schema,
   SubSchema extends Schema,
   SubPath extends string,
 > = OrigSchema extends unknown
   ? Omit<OrigSchema, LazySchemaPathKey> &
-      LazySchemaPathMarker<LazySchemaPathEntry<SubSchema, SubPath, LazySchemaPathOf<OrigSchema>>>
+      LazySchemaPathMarker<
+        AddLazySchemaPathEntries<SubSchema, SubPath, LazySchemaPathOf<OrigSchema>>
+      >
   : never
 
-type MaterializeLazySchemaPaths<T> = [T] extends [never]
-  ? unknown
-  : T extends LazySchemaPathEntry<
-        infer SubSchema extends Schema,
-        infer SubPath extends string,
-        infer Previous
-      >
-    ? MergeSchemaPath<MaterializeSchema<SubSchema>, SubPath> & MaterializeLazySchemaPaths<Previous>
-    : unknown
+type MaterializeSchemaPath<S, Prefix extends string> = Prefix extends ''
+  ? S
+  : S extends Schema
+    ? MergeSchemaPath<S, Prefix>
+    : never
+
+type MaterializeSchemaTask =
+  | readonly ['schema', Schema, string]
+  | readonly ['entry', unknown, string]
+
+// Keep schema and route-entry expansion in one tail-recursive worklist. A
+// nested `route()` used to recursively materialize the child schema before
+// returning to the parent, which made otherwise valid deep route trees hit
+// TypeScript's instantiation-depth limit.
+type MaterializeSchemaTasks<
+  Tasks extends readonly MaterializeSchemaTask[],
+  Result = unknown,
+> = Tasks extends readonly [infer Task, ...infer Rest extends readonly MaterializeSchemaTask[]]
+  ? Task extends readonly ['schema', infer S extends Schema, infer Prefix extends string]
+    ? S extends LazySchemaPathMarker<infer Entry>
+      ? MaterializeSchemaTasks<
+          [
+            readonly ['schema', Omit<S, LazySchemaPathKey>, Prefix],
+            readonly ['entry', Entry, Prefix],
+            ...Rest,
+          ],
+          Result
+        >
+      : MaterializeSchemaTasks<Rest, Result & MaterializeSchemaPath<S, Prefix>>
+    : Task extends readonly ['entry', infer Entry, infer Prefix extends string]
+      ? [Entry] extends [never]
+        ? MaterializeSchemaTasks<Rest, Result>
+        : Entry extends LazySchemaPathEntry<
+              infer SubSchema extends Schema,
+              infer SubPath extends string,
+              infer Previous
+            >
+          ? MaterializeSchemaTasks<
+              [
+                readonly ['schema', SubSchema, MergePath<Prefix, SubPath>],
+                readonly ['entry', Previous, Prefix],
+                ...Rest,
+              ],
+              Result
+            >
+          : MaterializeSchemaTasks<Rest, Result>
+      : MaterializeSchemaTasks<Rest, Result>
+  : Result
 
 export type MaterializeSchema<S extends Schema> = S extends unknown
-  ? S extends LazySchemaPathMarker<infer Entry>
-    ? Omit<S, LazySchemaPathKey> & MaterializeLazySchemaPaths<Entry>
-    : S
+  ? MaterializeSchemaTasks<[readonly ['schema', S, '']]>
   : never
 
 type MergeEndpointParamsWithPath<T extends Endpoint, SubPath extends string> = T extends unknown

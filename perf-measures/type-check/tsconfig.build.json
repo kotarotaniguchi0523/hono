@@ -3,8 +3,12 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "exclude": ["dist", "scripts"],
-  "references": [
-    { "path": "../../tsconfig.build.json" }
-  ]
+  "exclude": [
+    "dist",
+    "scripts",
+    "generated/collision-app.ts",
+    "generated/collision-contract.ts",
+    "contracts.ts"
+  ],
+  "references": [{ "path": "../../tsconfig.build.json" }]
 }

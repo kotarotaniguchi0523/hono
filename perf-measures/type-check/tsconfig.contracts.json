@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "noEmit": true,
+    "types": ["node"],
+    "rootDir": "../../"
+  },
+  "include": ["contracts.ts", "generated/**/*.ts", "../../src/**/*.ts"],
+  "exclude": ["generated/client-cases.ts", "../../src/**/*.test.ts", "../../src/**/*.test.tsx"]
+}

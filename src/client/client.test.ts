@@ -2039,3 +2039,37 @@ describe('QUERY', () => {
     })
   })
 })
+
+describe('Equivalent route path spellings', () => {
+  it('should keep both methods when `/foo` and `foo` are registered', async () => {
+    const app = new Hono()
+      .get('/foo', (c) => c.json({ method: 'get' as const }))
+      .post('foo', (c) => c.json({ method: 'post' as const }))
+    const client = hc<typeof app>('', { fetch: app.request })
+
+    const getResponse = await client.foo.$get()
+    const postResponse = await client.foo.$post()
+
+    expect(await getResponse.json()).toEqual({ method: 'get' })
+    expect(await postResponse.json()).toEqual({ method: 'post' })
+  })
+})
+
+describe('Reserved-looking RPC path segments', () => {
+  it('should keep marker-like and proxy-named paths callable', async () => {
+    const nested = new Hono()
+      .get('/__hono_lazy_schema_path__', (c) => c.json({ path: 'marker' as const }))
+      .get('/valueOf', (c) => c.json({ path: 'valueOf' as const }))
+      .get('/toString', (c) => c.json({ path: 'toString' as const }))
+    const app = new Hono().route('/api', nested)
+    const client = hc<typeof app>('', { fetch: app.request })
+
+    const markerResponse = await client.api['__hono_lazy_schema_path__'].$get()
+    const valueOfResponse = await client.api.valueOf.$get()
+    const toStringResponse = await client.api.toString.$get()
+
+    expect(await markerResponse.json()).toEqual({ path: 'marker' })
+    expect(await valueOfResponse.json()).toEqual({ path: 'valueOf' })
+    expect(await toStringResponse.json()).toEqual({ path: 'toString' })
+  })
+})
