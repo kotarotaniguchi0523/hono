@@ -2568,6 +2568,47 @@ export type MergeSchemaPath<OrigSchema extends Schema, SubPath extends string> =
     : never
 }
 
+// `route()` stores composition metadata under a non-route key. The marker is
+// removed by MaterializeSchema before the schema is exposed to RPC consumers.
+type LazySchemaPathKey = '__hono_lazy_schema_path__'
+
+type LazySchemaPathMarker<Entry> = {
+  readonly __hono_lazy_schema_path__: Entry
+}
+
+type LazySchemaPathEntry<SubSchema extends Schema, SubPath extends string, Previous> = {
+  schema: SubSchema
+  path: SubPath
+  previous: Previous
+}
+
+type LazySchemaPathOf<T> = T extends LazySchemaPathMarker<infer Entry> ? Entry : never
+
+export type AddLazySchemaPath<
+  OrigSchema extends Schema,
+  SubSchema extends Schema,
+  SubPath extends string,
+> = OrigSchema extends unknown
+  ? Omit<OrigSchema, LazySchemaPathKey> &
+      LazySchemaPathMarker<LazySchemaPathEntry<SubSchema, SubPath, LazySchemaPathOf<OrigSchema>>>
+  : never
+
+type MaterializeLazySchemaPaths<T> = [T] extends [never]
+  ? unknown
+  : T extends LazySchemaPathEntry<
+        infer SubSchema extends Schema,
+        infer SubPath extends string,
+        infer Previous
+      >
+    ? MergeSchemaPath<MaterializeSchema<SubSchema>, SubPath> & MaterializeLazySchemaPaths<Previous>
+    : unknown
+
+export type MaterializeSchema<S extends Schema> = S extends unknown
+  ? S extends LazySchemaPathMarker<infer Entry>
+    ? Omit<S, LazySchemaPathKey> & MaterializeLazySchemaPaths<Entry>
+    : S
+  : never
+
 type MergeEndpointParamsWithPath<T extends Endpoint, SubPath extends string> = T extends unknown
   ? {
       input: T['input'] extends { param: infer _ }
@@ -2736,7 +2777,8 @@ export type RemoveQuestion<T> = T extends `${infer R}?` ? R : T
 
 type IsUnion<T, U = T> = T extends any ? ([U] extends [T] ? false : true) : never
 
-type ExtractSchemaMember<T> = T extends HonoBase<any, infer S extends Schema, any, any> ? S : never
+type ExtractSchemaMember<T> =
+  T extends HonoBase<any, infer S extends Schema, any, any> ? MaterializeSchema<S> : never
 
 type ExtractSchemaResult<S> = [S] extends [never]
   ? never

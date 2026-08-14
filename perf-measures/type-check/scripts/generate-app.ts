@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs'
 import * as path from 'node:path'
 
 const count = Number(process.env.BENCHMARK_ROUTE_COUNT ?? '200')
+const nestedLevels = Number(process.env.BENCHMARK_NESTED_LEVELS ?? '0')
 const routeMethods = (process.env.BENCHMARK_ROUTE_METHODS ?? 'get')
   .split(',')
   .map((method) => method.trim())
@@ -22,6 +23,10 @@ if (!Number.isSafeInteger(count) || count < 1) {
   throw new Error('BENCHMARK_ROUTE_COUNT must be a positive integer')
 }
 
+if (!Number.isSafeInteger(nestedLevels) || nestedLevels < 0) {
+  throw new Error('BENCHMARK_NESTED_LEVELS must be a non-negative integer')
+}
+
 if (
   routeMethods.length === 0 ||
   routeMethods.some((method) => !supportedRouteMethods.has(method))
@@ -32,8 +37,10 @@ if (
 }
 
 const generateRoutes = (count: number) => {
-  let routes = `import { Hono } from '../../../src'
-export const app = new Hono()`
+  let routes = `import { Hono } from '../../../src'`
+  const root = nestedLevels > 0 ? 'level0' : 'app'
+  routes += `
+${nestedLevels > 0 ? `const ${root}` : 'export const app'} = new Hono()`
   for (let i = 1; i <= count; i++) {
     const method = routeMethods[(i - 1) % routeMethods.length]
     routes +=
@@ -48,8 +55,16 @@ export const app = new Hono()`
   .${method}('/route${i}/:id', (c) => {
     return c.json({
       ok: true
-    })
+      })
   })`
+  }
+  for (let level = 1; level <= nestedLevels; level++) {
+    routes += `
+const level${level} = new Hono().route('/level${level}', level${level - 1})`
+  }
+  if (nestedLevels > 0) {
+    routes += `
+export const app = new Hono().route('/api', level${nestedLevels})`
   }
   return routes
 }

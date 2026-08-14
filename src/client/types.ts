@@ -1,7 +1,14 @@
 import type { Hono } from '../hono'
 import type { HonoBase } from '../hono-base'
 import type { METHODS, METHOD_NAME_ALL_LOWERCASE } from '../router'
-import type { Endpoint, ExtractSchema, KnownResponseFormat, ResponseFormat, Schema } from '../types'
+import type {
+  Endpoint,
+  ExtractSchema,
+  KnownResponseFormat,
+  MaterializeSchema,
+  ResponseFormat,
+  Schema,
+} from '../types'
 import type { StatusCode, SuccessStatusCode } from '../utils/http-status'
 import type { HasRequiredKeys } from '../utils/types'
 
@@ -375,7 +382,11 @@ type ClientFromSchema<Prefix extends string, S extends Schema> = S extends unkno
   : never
 
 export type Client<T, Prefix extends string> =
-  T extends HonoBase<any, infer S, any> ? ClientFromSchema<Prefix, S> : never
+  T extends HonoBase<any, infer S, any>
+    ? S extends Schema
+      ? ClientFromSchema<Prefix, MaterializeSchema<S>>
+      : never
+    : never
 
 export type Callback = (opts: CallbackOptions) => unknown
 
