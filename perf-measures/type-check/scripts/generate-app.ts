@@ -156,7 +156,8 @@ export const app = new Hono().route('/api', level${nestedLevels})`
 
 const generateClientCases = () => {
   const users = clientProperty([...clientPrefix(), 'v1', 'users', ':id'])
-  return `import { hc, type InferRequestType, type InferResponseType } from '../../../src/client'
+  return `import { hc } from '../../../src/client'
+import type { InferRequestType, InferResponseType } from '../../../src/client'
 import type { app } from './app'
 
 type Equivalent<Left, Right> = [Left] extends [Right]
