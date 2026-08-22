@@ -1,0 +1,4 @@
+dist
+diagnostics-*.json
+generated/*
+!generated/.gitkeep

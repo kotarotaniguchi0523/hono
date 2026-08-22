@@ -11,6 +11,7 @@ import type {
   Env,
   ExtractSchema,
   Handler,
+  HandlerInterface,
   InputToDataByTarget,
   MergePath,
   MergeSchemaPath,
@@ -25,6 +26,7 @@ import type {
 import type { ContentfulStatusCode, StatusCode } from './utils/http-status'
 import type { Equal, Expect } from './utils/types'
 import { validator } from './validator'
+import type { AddLazySchemaPath } from './types'
 
 describe('Env', () => {
   test('Env', () => {
@@ -45,6 +47,66 @@ describe('Env', () => {
       expectTypeOf(FLAG).toEqualTypeOf<boolean>()
       return c.text('foo')
     })
+  })
+})
+
+describe('ExtractSchema', () => {
+  it('preserves each member when adding a lazy path to a schema union', () => {
+    type Endpoint = {
+      input: {}
+      output: {}
+      outputFormat: 'json'
+      status: 200
+    }
+    type Left = { '/left': { $get: Endpoint } }
+    type Right = { '/right': { $get: Endpoint } }
+    type Actual = AddLazySchemaPath<Left | Right, {}, '/api'>
+    type Keys<T> = T extends unknown ? Exclude<keyof T, typeof Symbol.iterator> : never
+    type verify = Expect<Equal<Keys<Actual>, '/left' | '/right'>>
+  })
+
+  it('should intersect schemas only when the app type is a union', () => {
+    const left = new Hono().get('/left', (c) => c.text('left'))
+    const right = new Hono().get('/right', (c) => c.text('right'))
+
+    type Actual = ExtractSchema<typeof left | typeof right>
+    type Expected = {
+      '/left': {
+        $get: {
+          input: {}
+          output: 'left'
+          outputFormat: 'text'
+          status: ContentfulStatusCode
+        }
+      }
+    } & {
+      '/right': {
+        $get: {
+          input: {}
+          output: 'right'
+          outputFormat: 'text'
+          status: ContentfulStatusCode
+        }
+      }
+    }
+    type verify = Expect<Equal<Expected, Actual>>
+  })
+
+  it('keeps routes when the app schema union contains BlankSchema', () => {
+    const blank = new Hono()
+    const routed = new Hono().get('/blank', (c) => c.text('blank'))
+
+    type Actual = ExtractSchema<typeof blank | typeof routed>
+    type verify = Expect<Equal<keyof Actual, '/blank'>>
+  })
+
+  it('materializes all mounted schemas', () => {
+    const left = new Hono().get('/left', (c) => c.json({ side: 'left' as const }))
+    const right = new Hono().get('/right', (c) => c.json({ side: 'right' as const }))
+    const app = new Hono().route('/one', left).route('/two', right)
+
+    type Actual = ExtractSchema<typeof app>
+    type verify = Expect<Equal<keyof Actual, '/one/left' | '/two/right'>>
   })
 })
 

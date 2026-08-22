@@ -1,7 +1,14 @@
 import type { Hono } from '../hono'
 import type { HonoBase } from '../hono-base'
 import type { METHODS, METHOD_NAME_ALL_LOWERCASE } from '../router'
-import type { Endpoint, ExtractSchema, KnownResponseFormat, ResponseFormat, Schema } from '../types'
+import type {
+  Endpoint,
+  ExtractSchema,
+  KnownResponseFormat,
+  MaterializeSchema,
+  ResponseFormat,
+  Schema,
+} from '../types'
 import type { StatusCode, SuccessStatusCode } from '../utils/http-status'
 import type { HasRequiredKeys } from '../utils/types'
 
@@ -310,9 +317,11 @@ type PathToChain<
 
 export type Client<T, Prefix extends string> =
   T extends HonoBase<any, infer S, any>
-    ? S extends Record<infer K, Schema>
-      ? K extends string
-        ? PathToChain<Prefix, K, S>
+    ? S extends Schema
+      ? MaterializeSchema<S> extends Record<infer K, Schema>
+        ? K extends string
+          ? PathToChain<Prefix, K, MaterializeSchema<S>>
+          : never
         : never
       : never
     : never
