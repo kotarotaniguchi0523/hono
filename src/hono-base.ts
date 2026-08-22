@@ -16,7 +16,7 @@ import type {
   H,
   HandlerInterface,
   MergePath,
-  MergeSchemaPath,
+  AddLazySchemaPath,
   MiddlewareHandler,
   MiddlewareHandlerInterface,
   Next,
@@ -215,7 +215,7 @@ class Hono<
   >(
     path: SubPath,
     app: Hono<SubEnv, SubSchema, SubBasePath, SubCurrentPath>
-  ): Hono<E, MergeSchemaPath<SubSchema, MergePath<BasePath, SubPath>> | S, BasePath, CurrentPath> {
+  ): Hono<E, AddLazySchemaPath<S, SubSchema, MergePath<BasePath, SubPath>>, BasePath, CurrentPath> {
     const subApp = this.basePath(path)
     app.routes.map((r) => {
       let handler

@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "rootDir": "./generated",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/domain.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "disableSourceOfProjectReferenceRedirect": true
+  },
+  "include": [
+    "generated/domains/shared.ts",
+    "generated/domains/users.ts",
+    "generated/domains/posts.ts",
+    "generated/domains/comments.ts",
+    "generated/domains/teams.ts",
+    "generated/domains/projects.ts",
+    "generated/domains/index.ts"
+  ],
+  "references": [{ "path": "../../tsconfig.build.json" }]
+}

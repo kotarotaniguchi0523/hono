@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "rootDir": "./generated",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/parent-composition.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "paths": {
+      "rpc-benchmark-domains": ["./dist/domains/index.d.ts"]
+    }
+  },
+  "include": ["generated/parent.ts"],
+  "references": [
+    { "path": "../../tsconfig.build.json" },
+    { "path": "./tsconfig.domain-authoring.json" }
+  ]
+}

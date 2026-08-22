@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "composite": false,
+    "incremental": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./dist/contracts.tsbuildinfo",
+    "disableSourceOfProjectReferenceRedirect": true,
+    "paths": {
+      "rpc-benchmark-domains": ["./dist/domains/index.d.ts"],
+      "rpc-benchmark-parent": ["./dist/parent.d.ts"]
+    }
+  },
+  "include": ["contracts/contracts.ts", "generated/deep-routes.ts"],
+  "references": [
+    { "path": "../../tsconfig.build.json" },
+    { "path": "./tsconfig.domain-authoring.json" },
+    { "path": "./tsconfig.parent-composition.json" }
+  ]
+}

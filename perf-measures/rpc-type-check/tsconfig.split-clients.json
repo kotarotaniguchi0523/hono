@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "composite": false,
+    "incremental": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./dist/split-clients.tsbuildinfo",
+    "disableSourceOfProjectReferenceRedirect": true,
+    "paths": {
+      "rpc-benchmark-domains": ["./dist/domains/index.d.ts"]
+    }
+  },
+  "include": ["cases/split-domain-clients.ts"],
+  "references": [
+    { "path": "../../tsconfig.build.json" },
+    { "path": "./tsconfig.domain-authoring.json" }
+  ]
+}

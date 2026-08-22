@@ -6,13 +6,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Context } from './context'
 import type { HonoBase } from './hono-base'
+import type {
+  LazySchemaPathEntry,
+  LazySchemaPathMarker,
+  MergeEndpointParamsWithPath,
+} from './internal/rpc-types'
 import type { CustomHeader, RequestHeader } from './utils/headers'
 import type { StatusCode } from './utils/http-status'
 import type {
   IfAnyThenEmptyObject,
   IsAny,
   JSONValue,
-  RemoveBlankRecord,
   Simplify,
   UnionToIntersection,
 } from './utils/types'
@@ -2550,16 +2554,6 @@ export type Endpoint = {
   status: StatusCode
 }
 
-type ExtractParams<Path extends string> = string extends Path
-  ? Record<string, string>
-  : Path extends `${infer _Start}:${infer Param}/${infer Rest}`
-    ? { [K in Param | keyof ExtractParams<`/${Rest}`>]: string }
-    : Path extends `${infer _Start}:${infer Param}`
-      ? { [K in Param]: string }
-      : never
-
-type FlattenIfIntersect<T> = T extends infer O ? { [K in keyof O]: O[K] } : never
-
 export type MergeSchemaPath<OrigSchema extends Schema, SubPath extends string> = {
   [P in keyof OrigSchema as MergePath<SubPath, P & string>]: [OrigSchema[P]] extends [
     Record<string, Endpoint>,
@@ -2568,36 +2562,84 @@ export type MergeSchemaPath<OrigSchema extends Schema, SubPath extends string> =
     : never
 }
 
-type MergeEndpointParamsWithPath<T extends Endpoint, SubPath extends string> = T extends unknown
-  ? {
-      input: T['input'] extends { param: infer _ }
-        ? ExtractParams<SubPath> extends never
-          ? T['input']
-          : FlattenIfIntersect<
-              T['input'] & {
-                param: {
-                  // Maps extracted keys, stripping braces, to a string-typed record.
-                  [K in keyof ExtractParams<SubPath> as K extends `${infer Prefix}{${infer _}}`
-                    ? Prefix
-                    : K]: string
-                }
-              }
-            >
-        : RemoveBlankRecord<ExtractParams<SubPath>> extends never
-          ? T['input']
-          : T['input'] & {
-              // Maps extracted keys, stripping braces, to a string-typed record.
-              param: {
-                [K in keyof ExtractParams<SubPath> as K extends `${infer Prefix}{${infer _}}`
-                  ? Prefix
-                  : K]: string
-              }
-            }
-      output: T['output']
-      outputFormat: T['outputFormat']
-      status: T['status']
-    }
+// `route()` stores composition metadata under a symbol key. The marker is
+// removed by MaterializeSchema before the schema is exposed to RPC consumers.
+// A well-known symbol is used so a real route named
+// `__hono_lazy_schema_path__` remains a normal schema entry. It exists only in
+// the type layer and does not add a runtime property.
+type LazySchemaPathKey = typeof Symbol.iterator
+
+type LazySchemaDirectPart<S extends Schema> = {
+  [K in Exclude<keyof S, typeof Symbol.iterator>]: S[K]
+}
+
+type LazySchemaPathOf<T> = T extends LazySchemaPathMarker<infer Entry> ? Entry : never
+
+type AddLazySchemaPathEntries<SubSchema extends Schema, SubPath extends string, Previous> =
+  | LazySchemaPathEntry<SubSchema, SubPath>
+  | Previous
+
+export type AddLazySchemaPath<
+  OrigSchema extends Schema,
+  SubSchema extends Schema,
+  SubPath extends string,
+  // Keep this conditional distributive: callers can carry a union of app
+  // schemas, and each member must retain its own route keys after composition.
+> = OrigSchema extends unknown
+  ? LazySchemaDirectPart<OrigSchema> &
+      LazySchemaPathMarker<
+        AddLazySchemaPathEntries<SubSchema, SubPath, LazySchemaPathOf<OrigSchema>>
+      >
   : never
+
+type MaterializeSchemaPath<S, Prefix extends string> = Prefix extends ''
+  ? S
+  : S extends Schema
+    ? MergeSchemaPath<S, Prefix>
+    : never
+
+type MaterializeSchemaTask =
+  | readonly ['schema', Schema, string]
+  | readonly ['entry', unknown, string]
+
+type MaterializeSchemaEntry<Entry, Prefix extends string> =
+  Entry extends LazySchemaPathEntry<infer SubSchema extends Schema, infer SubPath extends string>
+    ? MaterializeSchemaTasks<[readonly ['schema', SubSchema, MergePath<Prefix, SubPath>]]>
+    : never
+
+// Keep schema and route-entry expansion in one tail-recursive worklist. A
+// nested `route()` used to recursively materialize the child schema before
+// returning to the parent, which made otherwise valid deep route trees hit
+// TypeScript's instantiation-depth limit.
+type MaterializeSchemaTasks<
+  Tasks extends readonly MaterializeSchemaTask[],
+  Result = unknown,
+> = Tasks extends readonly [infer Task, ...infer Rest extends readonly MaterializeSchemaTask[]]
+  ? Task extends readonly ['schema', infer S extends Schema, infer Prefix extends string]
+    ? S extends LazySchemaPathMarker<infer Entry>
+      ? MaterializeSchemaTasks<
+          [
+            readonly ['schema', Omit<S, LazySchemaPathKey>, Prefix],
+            readonly ['entry', Entry, Prefix],
+            ...Rest,
+          ],
+          Result
+        >
+      : MaterializeSchemaTasks<Rest, Result & MaterializeSchemaPath<S, Prefix>>
+    : Task extends readonly ['entry', infer Entry, infer Prefix extends string]
+      ? [Entry] extends [never]
+        ? MaterializeSchemaTasks<Rest, Result>
+        : MaterializeSchemaTasks<
+            Rest,
+            Result & UnionToIntersection<MaterializeSchemaEntry<Entry, Prefix>>
+          >
+      : MaterializeSchemaTasks<Rest, Result>
+  : Result
+
+type MaterializeSchema<S extends Schema> = S extends unknown
+  ? MaterializeSchemaTasks<[readonly ['schema', S, '']]>
+  : never
+
 export type AddParam<I, P extends string> =
   ParamKeys<P> extends never
     ? I
@@ -2734,9 +2776,10 @@ export type RemoveQuestion<T> = T extends `${infer R}?` ? R : T
 //////                            //////
 ////////////////////////////////////////
 
-export type ExtractSchema<T> = UnionToIntersection<
-  T extends HonoBase<infer _, infer S, any, any> ? S : never
->
+type ExtractSchemaMember<T> =
+  T extends HonoBase<any, infer S extends Schema, any, any> ? MaterializeSchema<S> : never
+
+export type ExtractSchema<T> = UnionToIntersection<ExtractSchemaMember<T>>
 
 export type ExtractSchemaForStatusCode<T, Status extends number> = {
   [Path in keyof ExtractSchema<T>]: {

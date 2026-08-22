@@ -1,9 +1,21 @@
 import type { Hono } from '../hono'
 import type { HonoBase } from '../hono-base'
+import type {
+  LazySchemaPathEntry as InternalLazySchemaPathEntry,
+  LazySchemaPathMarker as InternalLazySchemaPathMarker,
+  MergeEndpointParamsWithPath,
+} from '../internal/rpc-types'
 import type { METHODS, METHOD_NAME_ALL_LOWERCASE } from '../router'
-import type { Endpoint, ExtractSchema, KnownResponseFormat, ResponseFormat, Schema } from '../types'
+import type {
+  Endpoint,
+  ExtractSchema,
+  KnownResponseFormat,
+  MergePath,
+  ResponseFormat,
+  Schema,
+} from '../types'
 import type { StatusCode, SuccessStatusCode } from '../utils/http-status'
-import type { HasRequiredKeys } from '../utils/types'
+import type { HasRequiredKeys, UnionToIntersection } from '../utils/types'
 
 /**
  * Type representing the '$all' method name
@@ -308,12 +320,193 @@ type PathToChain<
         >
       }
 
+type FlatPathToChain<
+  Prefix extends string,
+  Path extends string,
+  S extends Schema,
+  Original extends string = Path,
+> = Path extends `${infer P}/${infer R}`
+  ? { [K in P]: FlatPathToChain<Prefix, R, S, Original> }
+  : {
+      [K in Path extends '' ? 'index' : Path]: ClientRequest<
+        Prefix,
+        Original,
+        ClientSchemaPathValue<S, `/${Original}`>
+      >
+    }
+
+type FlatClientFromSchema<Prefix extends string, S extends Schema> = UnionToIntersection<
+  NormalizeClientPaths<keyof S & string> extends infer Paths extends string
+    ? Paths extends string
+      ? FlatPathToChain<Prefix, Paths, S>
+      : never
+    : never
+>
+
+type ClientPathExceedsDepth<
+  Path extends string,
+  Depth extends unknown[] = [],
+> = Depth['length'] extends 20
+  ? true
+  : Path extends `${string}/${infer Rest}`
+    ? ClientPathExceedsDepth<Rest, [...Depth, unknown]>
+    : false
+
+type HasDeepClientPath<Paths extends string> = true extends (
+  Paths extends unknown ? ClientPathExceedsDepth<Paths> : never
+)
+  ? true
+  : false
+
+type StripLeadingSlash<Path extends string> = Path extends `/${infer Rest}`
+  ? StripLeadingSlash<Rest>
+  : Path
+
+type NormalizeClientPaths<Paths> = Paths extends string ? StripLeadingSlash<Paths> : never
+
+type ClientPathHead<Path extends string> = Path extends `${infer Head}/${string}` ? Head : Path
+
+type ClientPathTail<
+  Paths extends string,
+  Segment extends string,
+> = Paths extends `${Segment}/${infer Rest}` ? Rest : never
+
+type ClientPathExact<Paths extends string, Segment extends string> = Paths extends Segment
+  ? Paths
+  : never
+
+type ClientSchemaPathValue<S extends Schema, Candidate extends string> =
+  UnionToIntersection<
+    | (Candidate extends keyof S ? S[Candidate] : never)
+    | (StripLeadingSlash<Candidate> extends keyof S ? S[StripLeadingSlash<Candidate>] : never)
+  > extends infer R
+    ? R extends Schema
+      ? R
+      : never
+    : never
+
+type ClientEndpoint<Prefix extends string, S extends Schema, Path extends string> = ClientRequest<
+  Prefix,
+  Path,
+  ClientSchemaPathValue<S, Path>
+>
+
+type JoinClientPath<Prefix extends string, Segment extends string> = Prefix extends ''
+  ? `/${Segment}`
+  : `${Prefix}/${Segment}`
+
+type ClientTreeNode<
+  Prefix extends string,
+  S extends Schema,
+  Paths extends string,
+  Segment extends string,
+  PathPrefix extends string,
+> = (ClientPathExact<Paths, Segment> extends never
+  ? unknown
+  : ClientEndpoint<Prefix, S, JoinClientPath<PathPrefix, Segment>>) &
+  (ClientPathTail<Paths, Segment> extends never
+    ? unknown
+    : ClientTree<Prefix, S, ClientPathTail<Paths, Segment>, JoinClientPath<PathPrefix, Segment>>)
+
+type ClientTree<
+  Prefix extends string,
+  S extends Schema,
+  Paths extends string,
+  PathPrefix extends string = '',
+> = {
+  [Segment in ClientPathHead<Paths> as Segment extends '' ? 'index' : Segment]: ClientTreeNode<
+    Prefix,
+    S,
+    Paths,
+    Segment,
+    PathPrefix
+  >
+}
+
+type ClientFromSchema<Prefix extends string, S extends Schema> = S extends unknown
+  ? string extends keyof S
+    ? PathToChain<Prefix, string, S>
+    : HasDeepClientPath<NormalizeClientPaths<keyof S & string>> extends true
+      ? FlatClientFromSchema<Prefix, S>
+      : ClientTree<Prefix, S, NormalizeClientPaths<keyof S & string>>
+  : never
+
+type LazySchemaPathEntry = InternalLazySchemaPathEntry<Schema, string>
+
+type LazySchemaPathMarker = InternalLazySchemaPathMarker<LazySchemaPathEntry>
+
+type LazySchemaPathEntries<S> = S extends LazySchemaPathMarker ? S[typeof Symbol.iterator] : never
+
+type LazySchemaDirectPart<S extends Schema> = {
+  [K in Exclude<keyof S, typeof Symbol.iterator>]: S[K]
+}
+
+type ClientFromLazyEntry<Prefix extends string, Entry> =
+  Entry extends InternalLazySchemaPathEntry<infer S extends Schema, infer Mount extends string>
+    ? S extends LazySchemaPathMarker
+      ? ClientFromLazyEntry<Prefix, InternalLazySchemaPathEntry<LazySchemaDirectPart<S>, Mount>> &
+          PrefixLazyClientEntries<Prefix, Mount, LazySchemaPathEntries<S>>
+      : UnionToIntersection<
+          keyof S & string extends infer Paths extends string
+            ? Paths extends string
+              ? LazyPathToChain<Prefix, MergePath<Mount, Paths>, S, Paths, Mount>
+              : never
+            : never
+        >
+    : never
+
+type PrefixLazyClientEntries<Prefix extends string, Mount extends string, Entries> =
+  Entries extends InternalLazySchemaPathEntry<infer S extends Schema, infer Path extends string>
+    ? ClientFromLazyEntry<Prefix, InternalLazySchemaPathEntry<S, MergePath<Mount, Path>>>
+    : never
+
+type LazyClientMethods<S extends Schema, Original extends string, Mount extends string> =
+  ClientSchemaPathValue<S, Original> extends infer Methods
+    ? Methods extends Record<string, unknown>
+      ? {
+          [M in keyof Methods]: Methods[M] extends Endpoint
+            ? MergeEndpointParamsWithPath<Methods[M], Mount>
+            : never
+        }
+      : never
+    : never
+
+type LazyPathToChain<
+  Prefix extends string,
+  Path extends string,
+  S extends Schema,
+  Original extends string,
+  Mount extends string,
+  FullPath extends string = Path,
+> = Path extends `/${infer P}`
+  ? LazyPathToChain<Prefix, P, S, Original, Mount, FullPath>
+  : Path extends `${infer P}/${infer R}`
+    ? { [K in P]: LazyPathToChain<Prefix, R, S, Original, Mount, FullPath> }
+    : {
+        [K in Path extends '' ? 'index' : Path]: ClientRequest<
+          Prefix,
+          FullPath,
+          LazyClientMethods<S, Original, Mount>
+        >
+      }
+
+type ClientFromLazyEntries<Prefix extends string, Entries> = UnionToIntersection<
+  ClientFromLazyEntry<Prefix, Entries>
+>
+
+type ClientFromLazySchema<Prefix extends string, S extends Schema> =
+  LazySchemaDirectPart<S> extends infer Direct extends Schema
+    ? [keyof Direct] extends [never]
+      ? ClientFromLazyEntries<Prefix, LazySchemaPathEntries<S>>
+      : ClientFromLazyEntries<Prefix, LazySchemaPathEntries<S>> & ClientFromSchema<Prefix, Direct>
+    : never
+
 export type Client<T, Prefix extends string> =
   T extends HonoBase<any, infer S, any>
-    ? S extends Record<infer K, Schema>
-      ? K extends string
-        ? PathToChain<Prefix, K, S>
-        : never
+    ? S extends Schema
+      ? S extends LazySchemaPathMarker
+        ? ClientFromLazySchema<Prefix, S>
+        : ClientFromSchema<Prefix, S>
       : never
     : never
 
