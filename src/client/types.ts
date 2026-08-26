@@ -1,7 +1,16 @@
 import type { Hono } from '../hono'
 import type { HonoBase } from '../hono-base'
+import type { LazySchemaPathEntry, LazySchemaPathMarker } from '../internal/schema'
 import type { METHODS, METHOD_NAME_ALL_LOWERCASE } from '../router'
-import type { Endpoint, ExtractSchema, KnownResponseFormat, ResponseFormat, Schema } from '../types'
+import type {
+  Endpoint,
+  ExtractSchema,
+  KnownResponseFormat,
+  MergePath,
+  MergeSchemaPath,
+  ResponseFormat,
+  Schema,
+} from '../types'
 import type { StatusCode, SuccessStatusCode } from '../utils/http-status'
 import type { HasRequiredKeys } from '../utils/types'
 
@@ -308,12 +317,58 @@ type PathToChain<
         >
       }
 
+type HonoSchema = Schema | LazySchemaPathMarker<LazySchemaPathEntry<object, string>>
+
+type LazySchemaPathEntries<S> = S extends { readonly [Symbol.iterator]: infer Entry }
+  ? Entry extends LazySchemaPathEntry<object, string>
+    ? Entry
+    : never
+  : never
+
+type ClientFromMountedSchema<S extends Schema, Prefix extends string, MountPath extends string> =
+  MergeSchemaPath<S, MountPath> extends infer MountedSchema extends Schema
+    ? MountedSchema extends Record<infer K, Schema>
+      ? K extends string
+        ? PathToChain<Prefix, K, MountedSchema>
+        : never
+      : never
+    : never
+
+type ClientFromDirectSchema<
+  S extends Schema,
+  Prefix extends string,
+  MountPath extends string,
+> = MountPath extends ''
+  ? S extends Record<infer K, Schema>
+    ? K extends string
+      ? PathToChain<Prefix, K, S>
+      : never
+    : never
+  : ClientFromMountedSchema<S, Prefix, MountPath>
+
+type ClientFromLazySchemaEntries<Entries, Prefix extends string, MountPath extends string> =
+  Entries extends LazySchemaPathEntry<
+    infer SubSchema extends HonoSchema,
+    infer SubPath extends string
+  >
+    ? SubSchema extends LazySchemaPathMarker<LazySchemaPathEntry<object, string>>
+      ? ClientFromSchema<SubSchema, Prefix, MergePath<MountPath, SubPath>>
+      : SubSchema extends Schema
+        ? ClientFromMountedSchema<SubSchema, Prefix, MergePath<MountPath, SubPath>>
+        : never
+    : never
+
+type ClientFromSchema<S extends HonoSchema, Prefix extends string, MountPath extends string = ''> =
+  S extends LazySchemaPathMarker<LazySchemaPathEntry<object, string>>
+    ? ClientFromLazySchemaEntries<LazySchemaPathEntries<S>, Prefix, MountPath>
+    : S extends Schema
+      ? ClientFromDirectSchema<S, Prefix, MountPath>
+      : never
+
 export type Client<T, Prefix extends string> =
   T extends HonoBase<any, infer S, any>
-    ? S extends Record<infer K, Schema>
-      ? K extends string
-        ? PathToChain<Prefix, K, S>
-        : never
+    ? S extends HonoSchema
+      ? ClientFromSchema<S, Prefix>
       : never
     : never
 
@@ -356,9 +411,11 @@ type ModSchema<D, Def extends GlobalResponseDefinition> = {
 }
 
 export type ApplyGlobalResponse<App, Def extends GlobalResponseDefinition> =
-  App extends HonoBase<infer E, infer _ extends Schema, infer B>
-    ? ModSchema<ExtractSchema<App>, Def> extends infer S extends Schema
-      ? Hono<E, S, B>
+  App extends HonoBase<infer E, infer S, infer B>
+    ? S extends HonoSchema
+      ? ModSchema<ExtractSchema<App>, Def> extends infer S extends Schema
+        ? Hono<E, S, B>
+        : never
       : never
     : never
 
@@ -386,8 +443,10 @@ type PickSchema<D, U extends StatusCode> = {
  * ```
  */
 export type PickResponseByStatusCode<App, U extends StatusCode> =
-  App extends HonoBase<infer E, infer _ extends Schema, infer B>
-    ? PickSchema<ExtractSchema<App>, U> extends infer S extends Schema
-      ? Hono<E, S, B>
+  App extends HonoBase<infer E, infer S, infer B>
+    ? S extends HonoSchema
+      ? PickSchema<ExtractSchema<App>, U> extends infer S extends Schema
+        ? Hono<E, S, B>
+        : never
       : never
     : never

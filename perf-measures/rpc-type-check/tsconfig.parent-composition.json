@@ -6,14 +6,8 @@
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/parent-composition.tsbuildinfo",
     "emitDeclarationOnly": true,
-    "disableSourceOfProjectReferenceRedirect": true,
-    "paths": {
-      "rpc-benchmark-domains": ["./dist/domains/index.d.ts"]
-    }
+    "disableSourceOfProjectReferenceRedirect": true
   },
-  "include": ["generated/parent.ts"],
-  "references": [
-    { "path": "../../tsconfig.build.json" },
-    { "path": "./tsconfig.domain-authoring.json" }
-  ]
+  "include": ["generated/parent.ts", "generated/domains/**/*.ts"],
+  "references": [{ "path": "../../tsconfig.build.json" }]
 }

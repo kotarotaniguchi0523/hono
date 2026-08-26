@@ -7,6 +7,11 @@
 import { compose } from './compose'
 import { Context } from './context'
 import type { ExecutionContext } from './context'
+import type {
+  AddLazySchemaPath,
+  LazySchemaPathEntry,
+  LazySchemaPathMarker,
+} from './internal/schema'
 import type { Router } from './router'
 import { METHODS, METHOD_NAME_ALL, METHOD_NAME_ALL_LOWERCASE } from './router'
 import type {
@@ -23,7 +28,6 @@ import type {
   OnHandlerInterface,
   RouterRoute,
   Schema,
-  AddLazySchemaPath,
 } from './types'
 import { COMPOSED_HANDLER } from './utils/constants'
 import { getPath, getPathNoStrict, mergePath } from './utils/url'
@@ -95,9 +99,11 @@ type MountOptions =
       replaceRequest?: MountReplaceRequest | false
     }
 
+type HonoSchema = Schema | LazySchemaPathMarker<LazySchemaPathEntry<object, string>>
+
 class Hono<
   E extends Env = Env,
-  S extends Schema = {},
+  S extends HonoSchema = {},
   BasePath extends string = '/',
   CurrentPath extends string = BasePath,
 > {
@@ -209,7 +215,7 @@ class Hono<
   route<
     SubPath extends string,
     SubEnv extends Env,
-    SubSchema extends Schema,
+    SubSchema extends HonoSchema,
     SubBasePath extends string,
     SubCurrentPath extends string,
   >(

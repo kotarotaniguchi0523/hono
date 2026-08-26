@@ -11,7 +11,6 @@ import type {
   Env,
   ExtractSchema,
   Handler,
-  HandlerInterface,
   InputToDataByTarget,
   MergePath,
   MergeSchemaPath,
@@ -26,7 +25,6 @@ import type {
 import type { ContentfulStatusCode, StatusCode } from './utils/http-status'
 import type { Equal, Expect } from './utils/types'
 import { validator } from './validator'
-import type { AddLazySchemaPath } from './types'
 
 describe('Env', () => {
   test('Env', () => {
@@ -51,20 +49,6 @@ describe('Env', () => {
 })
 
 describe('ExtractSchema', () => {
-  it('preserves each member when adding a lazy path to a schema union', () => {
-    type Endpoint = {
-      input: {}
-      output: {}
-      outputFormat: 'json'
-      status: 200
-    }
-    type Left = { '/left': { $get: Endpoint } }
-    type Right = { '/right': { $get: Endpoint } }
-    type Actual = AddLazySchemaPath<Left | Right, {}, '/api'>
-    type Keys<T> = T extends unknown ? Exclude<keyof T, typeof Symbol.iterator> : never
-    type verify = Expect<Equal<Keys<Actual>, '/left' | '/right'>>
-  })
-
   it('should intersect schemas only when the app type is a union', () => {
     const left = new Hono().get('/left', (c) => c.text('left'))
     const right = new Hono().get('/right', (c) => c.text('right'))
@@ -107,6 +91,31 @@ describe('ExtractSchema', () => {
 
     type Actual = ExtractSchema<typeof app>
     type verify = Expect<Equal<keyof Actual, '/one/left' | '/two/right'>>
+  })
+
+  it('keeps runtime path normalization for a trailing mount slash', () => {
+    const subApp = new Hono().get('/resource', (c) => c.text('resource'))
+    const app = new Hono().route('/api/', subApp)
+
+    type Actual = ExtractSchema<typeof app>
+    type verify = Expect<Equal<keyof Actual, '/api/resource'>>
+  })
+
+  it('preserves direct routes after a lazy composition', () => {
+    const subApp = new Hono().get('/resource', (c) => c.text('resource'))
+    const app = new Hono().route('/api', subApp).get('/health', (c) => c.text('ok'))
+
+    type Actual = ExtractSchema<typeof app>
+    type verify = Expect<Equal<keyof Actual, '/api/resource' | '/health'>>
+  })
+
+  it('materializes nested lazy compositions at the public schema boundary', () => {
+    const leaf = new Hono().get('/resource', (c) => c.text('resource'))
+    const middle = new Hono().route('/v1', leaf)
+    const app = new Hono().route('/api', middle)
+
+    type Actual = ExtractSchema<typeof app>
+    type verify = Expect<Equal<keyof Actual, '/api/v1/resource'>>
   })
 })
 

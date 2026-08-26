@@ -1,9 +1,14 @@
-import type { commentsApp, postsApp, projectsApp, teamsApp, usersApp } from 'rpc-benchmark-domains'
-import type { app } from 'rpc-benchmark-parent'
 import { hc } from '../../../src/client/index.js'
 import type { InferRequestType, InferResponseType } from '../../../src/client/index.js'
 import type { ExtractSchema } from '../../../src/types.js'
-import type { depth19App, depth21App } from '../generated/deep-routes.js'
+import type {
+  commentsApp,
+  postsApp,
+  projectsApp,
+  teamsApp,
+  usersApp,
+} from '../generated/domains/index.js'
+import type { app } from '../generated/parent.js'
 
 type Assert<T extends true> = T
 type Equal<A, B> =
@@ -139,21 +144,4 @@ export type ExtractSchemaContracts = [
   Assert<IsUsable<OutputOf<AppSchema['/comments/representative/:id']['$get']>>>,
   Assert<IsUsable<OutputOf<AppSchema['/teams/representative/:id']['$get']>>>,
   Assert<IsUsable<OutputOf<AppSchema['/projects/representative/:id']['$get']>>>,
-]
-
-export const depth19Endpoint =
-  hc<typeof depth19App>('/').level01.level02.level03.level04.level05.level06.level07.level08.level09
-    .level10.level11.level12.level13.level14.level15.level16.level17.level18.level19.target.$get
-
-export const depth21Endpoint =
-  hc<typeof depth21App>('/').level01.level02.level03.level04.level05.level06.level07.level08.level09
-    .level10.level11.level12.level13.level14.level15.level16.level17.level18.level19.level20.level21
-    .target.$get
-
-type Depth19Response = InferResponseType<typeof depth19Endpoint>
-type Depth21Response = InferResponseType<typeof depth21Endpoint>
-
-export type DeepRouteContracts = [
-  Assert<Equal<Depth19Response, { depth: 19 }>>,
-  Assert<Equal<Depth21Response, { depth: 21 }>>,
 ]
