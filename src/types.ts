@@ -2688,7 +2688,7 @@ type MaterializeSchemaTasks<
       : MaterializeSchemaTasks<Rest, Result>
   : Result
 
-export type MaterializeSchema<S extends Schema> = S extends unknown
+type MaterializeSchema<S extends Schema> = S extends unknown
   ? MaterializeSchemaTasks<[readonly ['schema', S, '']]>
   : never
 
