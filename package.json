@@ -176,6 +176,11 @@
       "import": "./dist/middleware/jsx-renderer/index.js",
       "require": "./dist/cjs/middleware/jsx-renderer/index.js"
     },
+    "./partial-navigation": {
+      "types": "./dist/types/partial-navigation/index.d.ts",
+      "import": "./dist/partial-navigation/index.js",
+      "require": "./dist/cjs/partial-navigation/index.js"
+    },
     "./jsx/dom": {
       "types": "./dist/types/jsx/dom/index.d.ts",
       "import": "./dist/jsx/dom/index.js",
@@ -499,6 +504,9 @@
       ],
       "jsx-renderer": [
         "./dist/types/middleware/jsx-renderer"
+      ],
+      "partial-navigation": [
+        "./dist/types/partial-navigation"
       ],
       "jsx/dom": [
         "./dist/types/jsx/dom"

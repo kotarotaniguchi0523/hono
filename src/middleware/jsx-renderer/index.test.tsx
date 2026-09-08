@@ -1,7 +1,9 @@
 /** @jsxImportSource ../../jsx */
 import { expectTypeOf } from 'vitest'
 import { html } from '../../helper/html'
+import { testClient } from '../../helper/testing'
 import { Hono } from '../../hono'
+import { ErrorBoundary } from '../../jsx'
 import type { FC } from '../../jsx'
 import { Suspense } from '../../jsx/streaming'
 import { jsxRenderer, useRequestContext } from '.'
@@ -368,6 +370,148 @@ d.replaceWith(c.content)
     expect(res.headers.get('X-Message-Set')).toBe('Hello')
     expect(res.headers.get('X-Message-Append')).toBe('Hello')
     expect(await res.text()).toBe('<!DOCTYPE html><div>Hi</div>')
+  })
+
+  it('should render a partial-navigation response without re-rendering the layout', async () => {
+    const app = new Hono()
+    app.use(
+      '*',
+      jsxRenderer(
+        ({ children }) => (
+          <html>
+            <body>
+              <header>Shell</header>
+              <main>{children}</main>
+              <footer>Footer</footer>
+            </body>
+          </html>
+        ),
+        { partialNavigation: true }
+      )
+    )
+    const routes = app
+      .get('/', (c) => c.render(<p>Home</p>, { title: 'Home' }))
+      .get('/about', (c) => {
+        c.status(201)
+        c.header('X-Route', 'about')
+        return c.render(
+          <>
+            <p>About</p>
+            <RequestUrl />
+          </>,
+          { title: 'About' }
+        )
+      })
+
+    const fullResponse = await routes.request('/')
+    expect(await fullResponse.text()).toBe(
+      '<!DOCTYPE html><html><body><header>Shell</header><main><!--hono-partial:start--><p>Home</p><!--hono-partial:end--></main><footer>Footer</footer></body></html>'
+    )
+
+    const partialResponse = await testClient(routes, undefined, undefined, {
+      headers: {
+        Accept: 'multipart/mixed; type="text/html"',
+        'X-Hono-Partial-Navigation': '1',
+      },
+    }).about.$get()
+    const partialText = await partialResponse.text()
+    expect(partialResponse.status).toBe(201)
+    expect(partialResponse.headers.get('X-Route')).toBe('about')
+    expect(partialResponse.headers.get('Content-Type')).toMatch(/^multipart\/mixed;/)
+    expect(partialText).toContain('Hono-Partial-Kind: initial')
+    expect(partialText).toContain('<p>About</p>')
+    expect(partialText).toContain('http://localhost/about')
+    expect(partialText).not.toContain('<header>Shell</header>')
+    expect(partialText).not.toContain('<html>')
+    expect(partialText).not.toContain('hono-partial:start')
+  })
+
+  it('should use partial streaming output for Suspense even when stream is disabled', async () => {
+    const app = new Hono()
+    app.use(
+      '*',
+      jsxRenderer(
+        ({ children }) => (
+          <html>
+            <body>{children}</body>
+          </html>
+        ),
+        {
+          partialNavigation: true,
+          stream: false,
+        }
+      )
+    )
+    const AsyncContent = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return <strong>Ready</strong>
+    }
+    const routes = app.get('/async', (c) =>
+      c.render(
+        <Suspense fallback={<span>Loading</span>}>
+          <AsyncContent />
+        </Suspense>,
+        { title: 'Async' }
+      )
+    )
+    const response = await testClient(routes, undefined, undefined, {
+      headers: {
+        Accept: 'multipart/mixed; type="text/html"',
+        'X-Hono-Partial-Navigation': '1',
+      },
+    }).async.$get()
+
+    const chunks: string[] = []
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Expected a response body')
+    }
+    const decoder = new TextDecoder()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      chunks.push(decoder.decode(value))
+    }
+
+    expect(chunks).toHaveLength(3)
+    expect(chunks[0]).toContain('Hono-Partial-Kind: initial')
+    expect(chunks[0]).toContain('Loading')
+    expect(chunks[1]).toContain('Hono-Partial-Kind: patch')
+    expect(chunks[1]).toContain('<template data-hono-target="H:')
+    expect(chunks[1]).toContain('<strong>Ready</strong>')
+    expect(chunks[1]).not.toContain('<script')
+  })
+
+  it('should suppress ErrorBoundary replacement scripts in partial mode', async () => {
+    const app = new Hono()
+    app.use(
+      '*',
+      jsxRenderer(({ children }) => <main>{children}</main>, { partialNavigation: true })
+    )
+    const FailingContent = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      throw new Error('failed')
+    }
+    const routes = app.get('/error', (c) =>
+      c.render(
+        <ErrorBoundary fallback={<p>Failed</p>}>
+          <FailingContent />
+        </ErrorBoundary>,
+        { title: 'Error' }
+      )
+    )
+    const response = await testClient(routes, undefined, undefined, {
+      headers: {
+        Accept: 'multipart/mixed; type="text/html"',
+        'X-Hono-Partial-Navigation': '1',
+      },
+    }).error.$get()
+    const text = await response.text()
+
+    expect(text).toContain('Failed')
+    expect(text).not.toContain('<script')
   })
 
   it('Env', async () => {

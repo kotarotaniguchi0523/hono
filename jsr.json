@@ -34,6 +34,7 @@
     "./jsx/jsx-runtime": "./src/jsx/jsx-runtime.ts",
     "./jsx/streaming": "./src/jsx/streaming.ts",
     "./jsx-renderer": "./src/middleware/jsx-renderer/index.ts",
+    "./partial-navigation": "./src/partial-navigation/index.ts",
     "./jsx/dom": "./src/jsx/dom/index.ts",
     "./jsx/dom/jsx-dev-runtime": "./src/jsx/dom/jsx-dev-runtime.ts",
     "./jsx/dom/jsx-runtime": "./src/jsx/dom/jsx-runtime.ts",
