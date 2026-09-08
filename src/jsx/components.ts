@@ -7,6 +7,7 @@ import { captureRenderContext, useContext } from './context'
 import { ErrorBoundary as ErrorBoundaryDomRenderer } from './dom/components'
 import type { HasRenderToDom } from './dom/render'
 import { StreamingContext } from './streaming'
+import { StreamingRenderModeContext } from './streaming-internal'
 import type { Child, FC, PropsWithChildren } from './'
 
 let errorBoundaryCounter = 0
@@ -64,6 +65,7 @@ export const ErrorBoundary: FC<
   }
 
   const nonce = useContext(StreamingContext)?.scriptNonce
+  const renderMode = useContext(StreamingRenderModeContext)
 
   let resume: ReturnType<typeof captureRenderContext> | undefined
   const getResume = () => (resume ||= captureRenderContext())
@@ -140,8 +142,10 @@ export const ErrorBoundary: FC<
         buffer[0] = buffer[0].replace(replaceRe, () => fallbackResString)
         return fallbackCallbacks?.length ? raw('', fallbackCallbacks) : ''
       }
-      return raw(
-        `<template data-hono-target="E:${index}">${fallbackResString}</template><script>
+      const replacementScript =
+        renderMode === 'partial'
+          ? ''
+          : `<script>
 ((d,c,n) => {
 c=d.currentScript.previousSibling
 d=d.getElementById('E:${index}')
@@ -149,7 +153,9 @@ if(!d)return
 do{n=d.nextSibling;n.remove()}while(n.nodeType!=8||n.nodeValue!='E:${index}')
 d.replaceWith(c.content)
 })(document)
-</script>`,
+</script>`
+      return raw(
+        `<template data-hono-target="E:${index}">${fallbackResString}</template>${replacementScript}`,
         fallbackCallbacks
       )
     }
@@ -168,11 +174,10 @@ d.replaceWith(c.content)
             }
             htmlArray = htmlArray.flat()
             const content = htmlArray.join('')
-            let html = buffer
-              ? ''
-              : `<template data-hono-target="E:${index}">${content}</template><script${
-                  nonce ? ` nonce="${nonce}"` : ''
-                }>
+            const replacementScript =
+              renderMode === 'partial'
+                ? ''
+                : `<script${nonce ? ` nonce="${nonce}"` : ''}>
 ((d,c) => {
 c=d.currentScript.previousSibling
 d=d.getElementById('E:${index}')
@@ -180,6 +185,9 @@ if(!d)return
 d.parentElement.insertBefore(c.content,d.nextSibling)
 })(document)
 </script>`
+            let html = buffer
+              ? ''
+              : `<template data-hono-target="E:${index}">${content}</template>${replacementScript}`
 
             if (htmlArray.every((html) => !(html as HtmlEscapedString).callbacks?.length)) {
               if (buffer) {
@@ -226,7 +234,7 @@ d.parentElement.insertBefore(c.content,d.nextSibling)
 
                       return raw(
                         content +
-                          (resolvedCount !== callbacks.length
+                          (resolvedCount !== callbacks.length || renderMode === 'partial'
                             ? ''
                             : `<script>
 ((d,c,n) => {

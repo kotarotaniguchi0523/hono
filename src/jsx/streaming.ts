@@ -6,13 +6,15 @@
 import { raw } from '../helper/html'
 import { HtmlEscapedCallbackPhase, resolveCallback } from '../utils/html'
 import type { HtmlEscapedString } from '../utils/html'
-import { isUntrustedObject, JSXNode, renderChildren, renderUntrustedObject } from './base'
+import { isUntrustedObject, renderChildren, renderUntrustedObject } from './base'
+import type { JSXNode } from './base'
 import { childrenToString } from './components'
 import { DOM_RENDERER, DOM_STASH } from './constants'
 import { captureRenderContext, createContext, useContext } from './context'
 import { Suspense as SuspenseDomRenderer } from './dom/components'
 import { buildDataStack } from './dom/render'
 import type { HasRenderToDom, NodeObject } from './dom/render'
+import { renderToChunks, StreamingRenderModeContext } from './streaming-internal'
 import type { Child, FC, PropsWithChildren, Context as JSXContext } from './'
 
 /**
@@ -57,6 +59,7 @@ export const Suspense: FC<PropsWithChildren<{ fallback: any }>> = async ({
   }
 
   const nonce = useContext(StreamingContext)?.scriptNonce
+  const renderMode = useContext(StreamingRenderModeContext)
 
   let resArray: HtmlEscapedString[] | Promise<HtmlEscapedString[]>[] = []
 
@@ -113,11 +116,10 @@ export const Suspense: FC<PropsWithChildren<{ fallback: any }>> = async ({
               () => content
             )
           }
-          let html = buffer
-            ? ''
-            : `<template data-hono-target="H:${index}">${content}</template><script${
-                nonce ? ` nonce="${nonce}"` : ''
-              }>
+          const replacementScript =
+            renderMode === 'partial'
+              ? ''
+              : `<script${nonce ? ` nonce="${nonce}"` : ''}>
 ((d,c,n) => {
 c=d.currentScript.previousSibling
 d=d.getElementById('H:${index}')
@@ -126,6 +128,9 @@ do{n=d.nextSibling;n.remove()}while(n.nodeType!=8||n.nodeValue!='/$')
 d.replaceWith(c.content)
 })(document)
 </script>`
+          let html = buffer
+            ? ''
+            : `<template data-hono-target="H:${index}">${content}</template>${replacementScript}`
 
           const callbacks = htmlArray
             .map((html) => (html as HtmlEscapedString).callbacks || [])
@@ -149,6 +154,7 @@ d.replaceWith(c.content)
 ;(Suspense as HasRenderToDom)[DOM_RENDERER] = SuspenseDomRenderer
 
 const textEncoder = new TextEncoder()
+
 /**
  * @experimental
  * `renderToReadableStream()` is an experimental feature.
@@ -162,60 +168,12 @@ export const renderToReadableStream = (
   const reader = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        if (content instanceof JSXNode) {
-          // aJSXNode.toString() returns a string or Promise<string> and string is already escaped
-          content = content.toString() as HtmlEscapedString | Promise<HtmlEscapedString>
-        }
-        const context = typeof content === 'object' ? content : {}
-        const resolved = await resolveCallback(
-          content,
-          HtmlEscapedCallbackPhase.BeforeStream,
-          true,
-          context
-        )
-        if (!cancelled) {
-          controller.enqueue(textEncoder.encode(resolved))
-        }
-
-        let resolvedCount = 0
-        const callbacks: Promise<void>[] = []
-        const then = (promise: Promise<string>) => {
-          callbacks.push(
-            promise
-              .catch((err) => {
-                console.log(err)
-                onError(err)
-                return ''
-              })
-              .then(async (res) => {
-                res = await resolveCallback(
-                  res,
-                  HtmlEscapedCallbackPhase.BeforeStream,
-                  true,
-                  context
-                )
-                ;(res as HtmlEscapedString).callbacks
-                  ?.map((c) => c({ phase: HtmlEscapedCallbackPhase.Stream, context }))
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  .filter<Promise<string>>(Boolean as any)
-                  .forEach(then)
-                resolvedCount++
-                if (!cancelled) {
-                  controller.enqueue(textEncoder.encode(res))
-                }
-              })
-          )
-        }
-        ;(resolved as HtmlEscapedString).callbacks
-          ?.map((c) => c({ phase: HtmlEscapedCallbackPhase.Stream, context }))
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter<Promise<string>>(Boolean as any)
-          .forEach(then)
-        while (resolvedCount !== callbacks.length) {
-          await Promise.all(callbacks)
+        for await (const chunk of renderToChunks(content, onError)) {
+          if (!cancelled) {
+            controller.enqueue(textEncoder.encode(chunk))
+          }
         }
       } catch (e) {
-        // maybe the connection was closed
         onError(e)
       }
 
